@@ -2,15 +2,6 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { pickTopMentors, type Profile as MatchProfile } from "./match";
 
-type Profile = {
-  id: string;
-  display_name: string | null;
-  languages: string[] | null;
-  skills: string[] | null;
-  reputation: number | null;
-  role?: "mentor" | "learner" | "both" | null;
-};
-
 type Wallet = {
   user_id: string;
   earned_credits: number;
@@ -34,8 +25,7 @@ export default function App() {
   // Auth/session
   const [session, setSession] = useState<any>(null);
 
-  // Profilis
-  const [profile, setProfile] = useState<Profile | null>(null);
+  // Profilio formos laukai
   const [displayName, setDisplayName] = useState("");
   const [languages, setLanguages] = useState("");
   const [skills, setSkills] = useState("");
@@ -63,26 +53,15 @@ export default function App() {
     (async () => {
       const uid = session.user.id;
 
-      // 1) Profilis
+      // Profilis (užkrauti į formą)
       const { data: p } = await supabase.from("profiles").select("*").eq("id", uid).single();
-      if (!p) {
-        await supabase.from("profiles").insert({
-          id: uid,
-          display_name: session.user.user_metadata?.name || session.user.email?.split("@")[0],
-          languages: ["lt"],
-          skills: [],
-          role: "learner",
-        });
-      }
-      const { data: p2 } = await supabase.from("profiles").select("*").eq("id", uid).single();
-      if (p2) {
-        setProfile(p2 as Profile);
-        setDisplayName(p2.display_name || "");
-        setLanguages((p2.languages || []).join(","));
-        setSkills((p2.skills || []).join(","));
+      if (p) {
+        setDisplayName(p.display_name || "");
+        setLanguages((p.languages || []).join(","));
+        setSkills((p.skills || []).join(","));
       }
 
-      // 2) Wallet – įrašas, jei nėra + nuskaitymas
+      // Wallet (sukurti jei nėra, tada užkrauti)
       const { data: w } = await supabase.from("wallets").select("*").eq("user_id", uid).single();
       if (!w) {
         await supabase.from("wallets").insert({ user_id: uid });
@@ -131,20 +110,22 @@ export default function App() {
   // --- BOOK SESSION w/ CREDIT CHECK ---
   async function bookSession() {
     if (!session?.user?.id || !activeMentor || !when) return;
+
     // 1) patikrink kreditus
     const { data: w } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
     const total = (w?.earned_credits || 0) + (w?.purchased_credits || 0);
     if (total < 1) {
-      alert("Neturi kreditų. Spausk „Pirkti 1h“, tada grįžk ir rezervuok.");
+      alert("Neturi kreditų. Paspausk „+5 test kred.“, tada rezervuok.");
       return;
     }
-    // 2) nurašom: pirmiausia iš purchased, jei nėra – iš earned
+
+    // 2) nurašom (pirmiausia iš purchased)
     const spend = { purchased: 0, earned: 0 };
-    if ((w.purchased_credits || 0) >= 1) spend.purchased = 1; else spend.earned = 1;
+    if ((w?.purchased_credits || 0) >= 1) spend.purchased = 1; else spend.earned = 1;
 
     await supabase.from("wallets").update({
-      purchased_credits: (w.purchased_credits || 0) - spend.purchased,
-      earned_credits: (w.earned_credits || 0) - spend.earned,
+      purchased_credits: (w?.purchased_credits || 0) - spend.purchased,
+      earned_credits: (w?.earned_credits || 0) - spend.earned,
     }).eq("user_id", session.user.id);
 
     await supabase.from("transactions").insert({
@@ -155,7 +136,7 @@ export default function App() {
       meta: { mentor_id: activeMentor.id }
     });
 
-    // 3) sukuriam sesiją
+    // 3) sukurti sesiją
     const { error } = await supabase.from("sessions").insert({
       mentor_id: activeMentor.id,
       learner_id: session.user.id,
@@ -168,7 +149,6 @@ export default function App() {
       alert("Sesija užrezervuota ✅ (nurašytas 1 kreditas)");
       setActiveMentor(null);
       setWhen("");
-      // atnaujinti wallet
       const { data: w2 } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
       setWallet(w2 as Wallet);
     } else {
@@ -281,8 +261,22 @@ export default function App() {
       <div className="mt-6 p-5 rounded-2xl bg-gray-900 border border-gray-800">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Wallet</h2>
-          <div className="flex gap-2">
-            {/* Šitie mygtukai veiks PO deploy į Netlify */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                if (!session?.user?.id) return;
+                const { data: w } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
+                await supabase.from("wallets").update({
+                  purchased_credits: (w?.purchased_credits || 0) + 5
+                }).eq("user_id", session.user.id);
+                const { data: w2 } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
+                setWallet(w2 as Wallet);
+                alert("Pridėta +5 testinių kreditų ✅");
+              }}
+              className="px-3 py-2 rounded-lg bg-gray-700 border border-gray-600"
+            >
+              +5 test kred.
+            </button>
             <a href="/.netlify/functions/create-checkout-session?plan=1h" className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
               Pirkti 1h
             </a>
@@ -300,7 +294,7 @@ export default function App() {
         <div className="grid grid-cols-2 gap-4 mt-3">
           <Stat label="Uždirbti kreditai" value={wallet?.earned_credits ?? 0} />
           <Stat label="Nupirkti kreditai" value={wallet?.purchased_credits ?? 0} />
-          <Stat label="Learning Pass aktyvus" value={wallet?.pass_active ? 'Taip' : 'Ne'} />
+          <Stat label="Learning Pass aktyvus" value={wallet?.pass_active ? "Taip" : "Ne"} />
         </div>
       </div>
 
