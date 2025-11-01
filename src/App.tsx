@@ -1,22 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { pickTopMentors, type Profile as MatchProfile } from "./match";
-async function startCheckout(plan: "1h" | "5h" | "10h" | "pass") {
-  try {
-    const res = await fetch(`/.netlify/functions/create-checkout-session?plan=${plan}`);
-    const data = await res.json();
-    if (data?.url) {
-      window.location.href = data.url; // nukreipia į Stripe
-    } else {
-      alert("Nepavyko gauti Stripe nuorodos. Patikrink Netlify ENV kintamuosius.");
-      console.log("Checkout response:", data);
-    }
-  } catch (err) {
-    alert("Klaida jungiantis prie Stripe.");
-    console.error(err);
-  }
-}
-
 
 type Wallet = {
   user_id: string;
@@ -32,6 +16,23 @@ const Card: React.FC<{ title: string; desc: string }> = ({ title, desc }) => (
     <div className="text-gray-400">{desc}</div>
   </div>
 );
+
+// 👉 Stripe checkout fetch + redirect (JSON -> window.location)
+async function startCheckout(plan: "1h" | "5h" | "10h" | "pass") {
+  try {
+    const res = await fetch(`/.netlify/functions/create-checkout-session?plan=${plan}`);
+    const data = await res.json();
+    if (data?.url) {
+      window.location.href = data.url;
+    } else {
+      alert("Nepavyko gauti Stripe nuorodos. Patikrink Netlify ENV kintamuosius.");
+      console.log("Checkout response:", data);
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Klaida jungiantis prie Stripe.");
+  }
+}
 
 export default function App() {
   // Landing (waitlist)
@@ -60,7 +61,12 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      // apsauga nuo undefined
+      try {
+        sub?.subscription?.unsubscribe?.();
+      } catch {}
+    };
   }, []);
 
   // --- INIT PROFILE + WALLET ---
@@ -137,19 +143,23 @@ export default function App() {
 
     // 2) nurašom (pirmiausia iš purchased)
     const spend = { purchased: 0, earned: 0 };
-    if ((w?.purchased_credits || 0) >= 1) spend.purchased = 1; else spend.earned = 1;
+    if ((w?.purchased_credits || 0) >= 1) spend.purchased = 1;
+    else spend.earned = 1;
 
-    await supabase.from("wallets").update({
-      purchased_credits: (w?.purchased_credits || 0) - spend.purchased,
-      earned_credits: (w?.earned_credits || 0) - spend.earned,
-    }).eq("user_id", session.user.id);
+    await supabase
+      .from("wallets")
+      .update({
+        purchased_credits: (w?.purchased_credits || 0) - spend.purchased,
+        earned_credits: (w?.earned_credits || 0) - spend.earned,
+      })
+      .eq("user_id", session.user.id);
 
     await supabase.from("transactions").insert({
       user_id: session.user.id,
       type: "spend",
       credits: 1,
       amount_eur: null,
-      meta: { mentor_id: activeMentor.id }
+      meta: { mentor_id: activeMentor.id },
     });
 
     // 3) sukurti sesiją
@@ -158,7 +168,7 @@ export default function App() {
       learner_id: session.user.id,
       scheduled_at: new Date(when).toISOString(),
       duration_min: 60,
-      credits_charged: 1
+      credits_charged: 1,
     });
 
     if (!error) {
@@ -278,36 +288,62 @@ export default function App() {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Wallet</h2>
           <div className="flex flex-wrap gap-2">
+            {/* Test kred. */}
             <button
               onClick={async () => {
                 if (!session?.user?.id) return;
-                const { data: w } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
-                await supabase.from("wallets").update({
-                  purchased_credits: (w?.purchased_credits || 0) + 5
-                }).eq("user_id", session.user.id);
-                const { data: w2 } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
+                const { data: w } = await supabase
+                  .from("wallets")
+                  .select("*")
+                  .eq("user_id", session.user.id)
+                  .single();
+                await supabase
+                  .from("wallets")
+                  .update({
+                    purchased_credits: (w?.purchased_credits || 0) + 5,
+                  })
+                  .eq("user_id", session.user.id);
+                const { data: w2 } = await supabase
+                  .from("wallets")
+                  .select("*")
+                  .eq("user_id", session.user.id)
+                  .single();
                 setWallet(w2 as Wallet);
                 alert("Pridėta +5 testinių kreditų ✅");
               }}
               className="px-3 py-2 rounded-lg bg-gray-700 border border-gray-600"
             >
               +5 test kred.
-          <div className="flex flex-wrap gap-2">
-  <button onClick={() => startCheckout("1h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
-    Pirkti 1h
-  </button>
-  <button onClick={() => startCheckout("5h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
-    Pirkti 5h
-  </button>
-  <button onClick={() => startCheckout("10h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
-    Pirkti 10h
-  </button>
-  <button onClick={() => startCheckout("pass")} className="px-3 py-2 rounded-lg bg-white text-black">
-    Start Learning Pass
-  </button>
-</div>
+            </button>
 
+            {/* Stripe per JS redirect */}
+            <button
+              onClick={() => startCheckout("1h")}
+              className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
+            >
+              Pirkti 1h
+            </button>
+            <button
+              onClick={() => startCheckout("5h")}
+              className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
+            >
+              Pirkti 5h
+            </button>
+            <button
+              onClick={() => startCheckout("10h")}
+              className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
+            >
+              Pirkti 10h
+            </button>
+            <button
+              onClick={() => startCheckout("pass")}
+              className="px-3 py-2 rounded-lg bg-white text-black"
+            >
+              Start Learning Pass
+            </button>
+          </div>
         </div>
+
         <div className="grid grid-cols-2 gap-4 mt-3">
           <Stat label="Uždirbti kreditai" value={wallet?.earned_credits ?? 0} />
           <Stat label="Nupirkti kreditai" value={wallet?.purchased_credits ?? 0} />
@@ -319,9 +355,12 @@ export default function App() {
       <div className="mt-6 p-5 rounded-2xl bg-gray-900 border border-gray-800">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold">Rekomenduojami mentoriai</h2>
-          <button onClick={refreshMentors} className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700">
-            Atnaujinti
-          </button>
+        <button
+          onClick={refreshMentors}
+          className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700"
+        >
+          Atnaujinti
+        </button>
         </div>
 
         {recommended.length ? (
@@ -329,8 +368,12 @@ export default function App() {
             {recommended.map((m) => (
               <div key={m.id} className="p-4 rounded-xl border border-gray-800 bg-gray-950">
                 <div className="font-semibold">{m.display_name || "Mentorius"}</div>
-                <div className="text-gray-400 text-sm">Kalbos: {m.languages?.join(", ") || "—"}</div>
-                <div className="text-gray-400 text-sm">Įgūdžiai: {m.skills?.join(", ") || "—"}</div>
+                <div className="text-gray-400 text-sm">
+                  Kalbos: {m.languages?.join(", ") || "—"}
+                </div>
+                <div className="text-gray-400 text-sm">
+                  Įgūdžiai: {m.skills?.join(", ") || "—"}
+                </div>
                 <button
                   onClick={() => setActiveMentor(m)}
                   className="mt-2 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
@@ -341,7 +384,9 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <div className="text-gray-400">Kol kas nėra rekomendacijų — užpildyk kalbas ir įgūdžius, tada „Atnaujinti“.</div>
+          <div className="text-gray-400">
+            Kol kas nėra rekomendacijų — užpildyk kalbas ir įgūdžius, tada „Atnaujinti“.
+          </div>
         )}
       </div>
 
@@ -349,7 +394,9 @@ export default function App() {
       {activeMentor && (
         <div className="fixed inset-0 bg-black/70 grid place-items-center p-6">
           <div className="w-full max-w-md p-5 rounded-2xl bg-gray-900 border border-gray-800">
-            <div className="font-semibold mb-2">Rezervuoti: {activeMentor.display_name} (1h)</div>
+            <div className="font-semibold mb-2">
+              Rezervuoti: {activeMentor.display_name} (1h)
+            </div>
             <input
               type="datetime-local"
               value={when}
@@ -357,7 +404,10 @@ export default function App() {
               className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mb-3"
             />
             <div className="flex gap-2">
-              <button onClick={bookSession} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700">
+              <button
+                onClick={bookSession}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700"
+              >
                 Patvirtinti
               </button>
               <button
