@@ -17,26 +17,42 @@ const Card: React.FC<{ title: string; desc: string }> = ({ title, desc }) => (
   </div>
 );
 
-// Stripe checkout: kviečia Netlify funkciją ir nukreipia į Stripe
+// ✅ Stripe checkout per Netlify Function (JSON → redirect)
 async function startCheckout(plan: "1h" | "5h" | "10h" | "pass") {
   try {
-    const res = await fetch(`/.netlify/functions/create-checkout-session?plan=${plan}`);
-    const text = await res.text();
+    const res = await fetch(`/.netlify/functions/create-checkout-session?plan=${plan}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+
+    const txt = await res.text();
     let data: any = null;
-    try { data = JSON.parse(text); } catch {}
+    try {
+      data = JSON.parse(txt);
+    } catch {
+      // ignore
+    }
+
     if (!res.ok) {
-      alert(`Klaida iš funkcijos (${res.status}): ${text}`);
+      alert(`Funkcijos klaida (${res.status}): ${txt}`);
+      console.log("Checkout response text:", txt);
       return;
     }
+
     if (data?.url) {
+      // pagrindinis
       window.location.assign(data.url);
+      // atsarginiai (jei naršyklė kažką užblokuos)
+      setTimeout(() => (window.location.href = data.url), 400);
+      setTimeout(() => window.open(data.url, "_self"), 800);
     } else {
-      alert("Neteisingas atsakymas iš funkcijos. Žr. Console.");
-      console.log("Response text:", text);
+      alert("Neteisingas atsakymas iš funkcijos (nėra url). Žr. Console.");
+      console.log("Response text:", txt);
     }
   } catch (err) {
     console.error(err);
-    alert("Fetch klaida į create-checkout-session.");
+    alert("Nepavyko susisiekti su Stripe funkcija (tinklo klaida).");
   }
 }
 
@@ -68,7 +84,9 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => {
-      try { sub?.subscription?.unsubscribe?.(); } catch {}
+      try {
+        sub?.subscription?.unsubscribe?.();
+      } catch {}
     };
   }, []);
 
@@ -187,6 +205,7 @@ export default function App() {
 
   // --- UIs ---
   if (!session) {
+    // NOT LOGGED IN – Landing + Waitlist + Google login
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col items-center justify-center p-6 text-center">
         <h1 className="text-5xl font-bold mb-4 text-red-500">TimeTribe</h1>
@@ -237,6 +256,7 @@ export default function App() {
     );
   }
 
+  // LOGGED IN – Profile + Wallet + Matching + Booking
   return (
     <div className="min-h-screen bg-black text-white p-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between">
@@ -289,14 +309,27 @@ export default function App() {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Wallet</h2>
           <div className="flex flex-wrap gap-2">
+            {/* Test kred. */}
             <button
+              type="button"
               onClick={async () => {
                 if (!session?.user?.id) return;
-                const { data: w } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
-                await supabase.from("wallets").update({
-                  purchased_credits: (w?.purchased_credits || 0) + 5
-                }).eq("user_id", session.user.id);
-                const { data: w2 } = await supabase.from("wallets").select("*").eq("user_id", session.user.id).single();
+                const { data: w } = await supabase
+                  .from("wallets")
+                  .select("*")
+                  .eq("user_id", session.user.id)
+                  .single();
+                await supabase
+                  .from("wallets")
+                  .update({
+                    purchased_credits: (w?.purchased_credits || 0) + 5,
+                  })
+                  .eq("user_id", session.user.id);
+                const { data: w2 } = await supabase
+                  .from("wallets")
+                  .select("*")
+                  .eq("user_id", session.user.id)
+                  .single();
                 setWallet(w2 as Wallet);
                 alert("Pridėta +5 testinių kreditų ✅");
               }}
@@ -305,16 +338,17 @@ export default function App() {
               +5 test kred.
             </button>
 
-            <button onClick={() => startCheckout("1h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+            {/* Stripe mygtukai */}
+            <button type="button" onClick={() => startCheckout("1h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
               Pirkti 1h
             </button>
-            <button onClick={() => startCheckout("5h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+            <button type="button" onClick={() => startCheckout("5h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
               Pirkti 5h
             </button>
-            <button onClick={() => startCheckout("10h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+            <button type="button" onClick={() => startCheckout("10h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
               Pirkti 10h
             </button>
-            <button onClick={() => startCheckout("pass")} className="px-3 py-2 rounded-lg bg-white text-black">
+            <button type="button" onClick={() => startCheckout("pass")} className="px-3 py-2 rounded-lg bg-white text-black">
               Start Learning Pass
             </button>
           </div>
@@ -331,7 +365,11 @@ export default function App() {
       <div className="mt-6 p-5 rounded-2xl bg-gray-900 border border-gray-800">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold">Rekomenduojami mentoriai</h2>
-          <button onClick={refreshMentors} className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700">
+          <button
+            type="button"
+            onClick={refreshMentors}
+            className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700"
+          >
             Atnaujinti
           </button>
         </div>
@@ -344,6 +382,7 @@ export default function App() {
                 <div className="text-gray-400 text-sm">Kalbos: {m.languages?.join(", ") || "—"}</div>
                 <div className="text-gray-400 text-sm">Įgūdžiai: {m.skills?.join(", ") || "—"}</div>
                 <button
+                  type="button"
                   onClick={() => setActiveMentor(m)}
                   className="mt-2 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
                 >
@@ -369,10 +408,11 @@ export default function App() {
               className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mb-3"
             />
             <div className="flex gap-2">
-              <button onClick={bookSession} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700">
+              <button type="button" onClick={bookSession} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700">
                 Patvirtinti
               </button>
               <button
+                type="button"
                 onClick={() => setActiveMentor(null)}
                 className="px-4 py-2 rounded-xl bg-gray-800 border border-gray-700"
               >
