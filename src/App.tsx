@@ -334,31 +334,21 @@ export default function App() {
             </button>
 
             {/* Stripe per JS redirect */}
-            <button
-              onClick={() => startCheckout("1h")}
-              className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
-            >
-              Pirkti 1h
-            </button>
-            <button
-              onClick={() => startCheckout("5h")}
-              className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
-            >
-              Pirkti 5h
-            </button>
-            <button
-              onClick={() => startCheckout("10h")}
-              className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
-            >
-              Pirkti 10h
-            </button>
-            <button
-              onClick={() => startCheckout("pass")}
-              className="px-3 py-2 rounded-lg bg-white text-black"
-            >
-              Start Learning Pass
-            </button>
-          </div>
+            <div className="flex flex-wrap gap-2">
+  <button onClick={() => startCheckout("1h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+    Pirkti 1h
+  </button>
+  <button onClick={() => startCheckout("5h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+    Pirkti 5h
+  </button>
+  <button onClick={() => startCheckout("10h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+    Pirkti 10h
+  </button>
+  <button onClick={() => startCheckout("pass")} className="px-3 py-2 rounded-lg bg-white text-black">
+    Start Learning Pass
+  </button>
+</div>
+
         </div>
 
         <div className="grid grid-cols-2 gap-4 mt-3">
