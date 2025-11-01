@@ -2,6 +2,23 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { pickTopMentors, type Profile as MatchProfile } from "./match";
 
+async function startCheckout(plan: "1h" | "5h" | "10h" | "pass") {
+  try {
+    const res = await fetch(`/.netlify/functions/create-checkout-session?plan=${plan}`);
+    const data = await res.json();
+    if (data?.url) {
+      window.location.assign(data.url); // 🔁 nukreipia į Stripe
+    } else {
+      alert("Nepavyko gauti Stripe nuorodos. Žr. Console.");
+      console.log("Checkout response:", data);
+    }
+  } catch (err) {
+    alert("Klaida jungiantis prie Stripe.");
+    console.error(err);
+  }
+}
+
+
 type Wallet = {
   user_id: string;
   earned_credits: number;
