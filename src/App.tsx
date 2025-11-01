@@ -292,20 +292,21 @@ export default function App() {
               className="px-3 py-2 rounded-lg bg-gray-700 border border-gray-600"
             >
               +5 test kred.
-            </button>
-            <a href="/.netlify/functions/create-checkout-session?plan=1h" className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
-              Pirkti 1h
-            </a>
-            <a href="/.netlify/functions/create-checkout-session?plan=5h" className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
-              Pirkti 5h
-            </a>
-            <a href="/.netlify/functions/create-checkout-session?plan=10h" className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
-              Pirkti 10h
-            </a>
-            <a href="/.netlify/functions/create-checkout-session?plan=pass" className="px-3 py-2 rounded-lg bg-white text-black">
-              Start Learning Pass
-            </a>
-          </div>
+          <div className="flex flex-wrap gap-2">
+  <button onClick={() => startCheckout("1h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+    Pirkti 1h
+  </button>
+  <button onClick={() => startCheckout("5h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+    Pirkti 5h
+  </button>
+  <button onClick={() => startCheckout("10h")} className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">
+    Pirkti 10h
+  </button>
+  <button onClick={() => startCheckout("pass")} className="px-3 py-2 rounded-lg bg-white text-black">
+    Start Learning Pass
+  </button>
+</div>
+
         </div>
         <div className="grid grid-cols-2 gap-4 mt-3">
           <Stat label="Uždirbti kreditai" value={wallet?.earned_credits ?? 0} />
